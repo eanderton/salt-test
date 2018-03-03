@@ -1,0 +1,17 @@
+#!/bin/bash
+
+# cleanup the staged commit (if any)
+function cleanup() {
+  top_comment=$(git log -1 --pretty=%B | head -n1)
+
+  if [[ "$top_comment" = '__glrun__' ]]; then
+    git reset --soft HEAD^    
+  fi
+}
+trap cleanup EXIT
+
+# push staged work into a commit to satisfy giltab-runner
+git commit -a -m '__glrun__'
+
+# run the requested command
+gitlab-runner exec docker --docker-pull-policy=never "$@"

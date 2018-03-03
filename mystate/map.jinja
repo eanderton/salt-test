@@ -1,0 +1,13 @@
+{% load_yaml as defaults %}
+
+value:
+  nested1: a
+  nested2: b
+
+value2: foobar
+
+value3: baz
+
+{% endload %}
+
+{% set module_values = salt['pillar.get']('mystate', default=defaults, merge=True) %}
