@@ -1,30 +1,33 @@
 #!/usr/bin/python
-""" Salt unit-test runner.  Runs .sls files with an isolated configuration
-    along with embedded jinja data.  Supports pillar and grain overrides,
-    and pass/fail/changed count assertions.  
- 
-    Overall, this tool is indented to close a gap between `salt-call --local`
-    and `salt * --test`.  Tests are run live (no --test) locally, in the 
-    current enviornment, using a single-sls-as-test scheme, instead of 
-    reconfiguring the salt-minion configuration tree for each test.
+"""Salt unittest runner.  Runs .sls files with an isolated configuration
+along with embedded jinja data.  Supports pillar and grain overrides,
+and pass/fail/changed count assertions.  
 
-    In any test .sls file, if the jinja variable `testconfig` exists, it is
-    parsed and consumed as configuration for the containing salt run.
+Overall, this tool is indented to close a gap between `salt-call --local`
+and `salt * --test`.  Tests are run live (no --test) locally, in the 
+current environment, using a single-sls-as-test scheme, instead of 
+reconfiguring the salt-minion configuration tree for each test.
 
-    The test .sls itself may be any valid set of salt states, but is best
-    implemented as one or more include statements for code under test. 
-    Additional assertions like test scripts can also be run by using
-    `cmd.run`, to futher verify the results of the run.
+In any test .sls file, if the jinja variable `testconfig` exists, it is
+parsed and consumed as configuration for the containing salt run.
 
-    This tool will apply test states in-situ, and should be run inside
-    an isolated environment like a container, for best results.
+The test .sls itself may be any valid set of salt states, but is best
+implemented as one or more include statements for code under test. 
+Additional assertions like test scripts can also be run by using
+`cmd.run`, to futher verify the results of the run.
+
+This tool will apply test states in-situ just like salt-call.  For
+best results, run inside an isolated environment such as a Docker
+container or dedicated virtual machine.
 """
 
 from __future__ import unicode_literals, print_function
 import sys
 import os
 import json
+import argparse
 import salt.config
+from backports.tempfile import TemporaryDirectory
 from salt.cli.caller import BaseCaller
 from salt.output import display_output
 
@@ -67,24 +70,26 @@ def local_salt_call(fun, *args, **kwargs):
         grains = kwargs['grains']
         del kwargs['grains']
 
-    # build configuration around a non-existent config file for a 'local' run
-    # NOTE: kwargs are reformatted as 'k=v' pairs as though they were passed on
-    # the commandline
-    opts = salt.config.minion_config('/dev/null')
-    opts.update({
-        'id': 'local',
-        'file_client': 'local',
-        'cachedir': '',
-        'local': True,
-        'grains': grains,
-	'fileserver_backend': ['roots'],
-        'file_roots': { 'base': [os.getcwd()] },
-        'fun': fun,
-        'arg': list(args) + ['{}={}'.format(k,v) for k,v in kwargs.iteritems()],
-        'retcode_passthrough': True,
-    })
-    #print(json.dumps(opts, indent=4))
-    return BaseCaller(opts).call()
+    # establish cache dir
+    with TemporaryDirectory('salt-test-cache') as cachedir:
+        # build configuration around a non-existent config file for a 'local' run
+        # NOTE: kwargs are reformatted as 'k=v' pairs as though they were passed on
+        # the commandline
+        opts = salt.config.minion_config('/dev/null')
+        opts.update({
+            'id': 'local',
+            'file_client': 'local',
+            'cachedir': cachedir,
+            'local': True,
+            'grains': grains,
+            'fileserver_backend': ['roots'],
+            'file_roots': { 'base': [os.getcwd()] },
+            'fun': fun,
+            'arg': list(args) + ['{}={}'.format(k,v) for k,v in kwargs.iteritems()],
+            'retcode_passthrough': True,
+        })
+        #print(json.dumps(opts, indent=4))
+        return BaseCaller(opts).call()
 
 
 def extract_testconfig(test_unit_sls):
@@ -161,7 +166,6 @@ def eval_assertions(run_data, test_unit, testconfig):
 
 def run_tests(tests):
     tests_passed = True
-    # TODO: do some smart matching for finding tests based on args
 
     for test_unit in tests:
         # get testconfig by evaluating the sls file and extracting jinja vars
@@ -179,13 +183,18 @@ def run_tests(tests):
     return tests_passed
 
 
-def main(argv):
-    # TODO: parse args
-    if run_tests(tests=[argv[1]]):
-        return 0
+def main():
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=__doc__)
+    parser.add_argument('test_states', metavar='test-states', nargs='+', help='states to run')
+    
+    args = parser.parse_args()
+    if run_tests(args.test_states):
+        sys.exit(0)
     else:
-        return 1
+        sys.exit(1)
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv))
+    main()
