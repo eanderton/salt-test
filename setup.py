@@ -2,14 +2,15 @@
 
 import setuptools
 import subprocess
-from setuptools.command.develop import develop
+from setuptools.command.develop import develop as setuptools_develop
+from setuptools.command.test import test as setuptools_test
 from salt_test.version import __VERSION__
 
 # shim to install dev depenedencies on 'setup.py develop'
-class ExtDevelop(develop):
+class ExtDevelopCommand(setuptools_develop):
     def install_for_development(self):
         from distutils import log
-        develop.install_for_development(self)
+        setuptools_develop.install_for_development(self)
         log.info('\nInstalling development dependencies')
         reqs = ' '.join(self.distribution.extras_require.get('develop', []))
         proc = subprocess.Popen('pip install ' + reqs, shell=True)
@@ -32,10 +33,13 @@ setuptools.setup(
         'backports.tempfile',
     ],
     extras_require={
-        'develop': ['coverage'],
+        'develop': [
+            'coverage',
+            'mock',
+        ],
     },
     cmdclass={
-        'develop': ExtDevelop, 
+        'develop': ExtDevelopCommand,
     },
     entry_points={
         'console_scripts': [
